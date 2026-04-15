@@ -49,9 +49,9 @@ using MarginalLogDensities
 
         @testset "linked VarInfo" begin
             mx = marginalize(model, [@varname(x)]; transform_strategy=LinkAll())
-            binv = Bijectors.inverse(Bijectors.bijector(Beta(2, 2)))
+            binv = Bijectors.VectorBijectors.from_linked_vec(Beta(2, 2))
             for y_linked in range(-5, 5; length=10)
-                y_unlinked = binv(y_linked)
+                y_unlinked = binv([y_linked])
                 @test mx([y_linked]) ≈ logpdf(Beta(2, 2), y_unlinked)
             end
             # generally when marginalising Beta it doesn't go to zero

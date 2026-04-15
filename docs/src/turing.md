@@ -170,10 +170,12 @@ example). By default, `marginalize` sets up the `MarginalLogDensity` to use thes
 unconstrained (a.k.a. "linked", to use the language familiar from generalized linear
 modeling) parameters. 
 
-If you want transform them back to unlinked space, i.e. how they appear inside the model, 
-you need to construct a `VarInfo` and query it like this:
+If you want obtain parameters that are in unlinked space, i.e. how they appear inside the model, 
+you need to construct an `InitFromVector` initialisation strategy and use it to re-evaluate the model:
 
 ```@example turing
-vi = VarInfo(marginal, opt_sol.u)
-vi[@varname(r)]
+init_strat = InitFromVector(marginal, opt_sol.u)
+accs = DynamicPPL.OnlyAccsVarInfo(DynamicPPL.RawValueAccumulator(false))
+_, accs = DynamicPPL.init!!(full, accs, init_strat, DynamicPPL.UnlinkAll())
+DynamicPPL.get_raw_values(accs)
 ```
