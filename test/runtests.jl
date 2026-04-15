@@ -289,3 +289,7 @@ end
     # println(maximum(abs.(opt_sol1.u .- opt_sol3.u)))
     # @test all(isapprox.(opt_sol1.u, opt_sol3.u, atol=0.01))
 end
+
+@testset "DynamicPPL extension" begin
+    include("dynamicppl.jl")
+end
