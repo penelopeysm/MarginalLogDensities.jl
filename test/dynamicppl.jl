@@ -11,13 +11,12 @@ using MarginalLogDensities
             return y ~ Normal(0, 1)
         end
         model = demo()
-        vi = VarInfo(model)
         # Marginalize out `x`.
         @testset for getlogprob in [DynamicPPL.getlogprior, DynamicPPL.getlogjoint]
             marginalized = marginalize(
                 model,
                 [@varname(x)];
-                varinfo=vi,
+                transform_strategy=UnlinkAll(),
                 getlogprob=getlogprob,
                 hess_adtype=AutoForwardDiff(),
             )
@@ -33,17 +32,15 @@ using MarginalLogDensities
             return y ~ Beta(2, 2)
         end
         model = f()
-        vi_unlinked = VarInfo(model)
-        vi_linked = DynamicPPL.link(vi_unlinked, model)
 
-        @testset "unlinked VarInfo" begin
-            mx = marginalize(model, [@varname(x)]; varinfo=vi_unlinked)
+        @testset "unlinked" begin
+            mx = marginalize(model, [@varname(x)]; transform_strategy=UnlinkAll())
             for x in range(0.01, 0.99; length=10)
                 @test mx([x]) ≈ logpdf(Beta(2, 2), x)
             end
             # generally when marginalising Beta it doesn't go to zero
             # https://github.com/TuringLang/DynamicPPL.jl/pull/1036#discussion_r2349388067
-            my = marginalize(model, [@varname(y)]; varinfo=vi_unlinked)
+            my = marginalize(model, [@varname(y)]; transform_strategy=UnlinkAll())
             diff = my([0.0]) - logpdf(Normal(), 0.0)
             for x in range(-5, 5; length=10)
                 @test my([x]) ≈ logpdf(Normal(), x) + diff
@@ -51,7 +48,7 @@ using MarginalLogDensities
         end
 
         @testset "linked VarInfo" begin
-            mx = marginalize(model, [@varname(x)]; varinfo=vi_linked)
+            mx = marginalize(model, [@varname(x)]; transform_strategy=LinkAll())
             binv = Bijectors.inverse(Bijectors.bijector(Beta(2, 2)))
             for y_linked in range(-5, 5; length=10)
                 y_unlinked = binv(y_linked)
@@ -59,7 +56,7 @@ using MarginalLogDensities
             end
             # generally when marginalising Beta it doesn't go to zero
             # https://github.com/TuringLang/DynamicPPL.jl/pull/1036#discussion_r2349388067
-            my = marginalize(model, [@varname(y)]; varinfo=vi_linked)
+            my = marginalize(model, [@varname(y)]; transform_strategy=LinkAll())
             diff = my([0.0]) - logpdf(Normal(), 0.0)
             for x in range(-5, 5; length=10)
                 @test my([x]) ≈ logpdf(Normal(), x) + diff
@@ -76,36 +73,34 @@ using MarginalLogDensities
         vi_unlinked = VarInfo(model)
         vi_linked = DynamicPPL.link(vi_unlinked, model)
 
-        function get_raw_values_from_tvals(vi::VarInfo)
-            # TODO(penelopeysm) Fix this in the source code itself.
-            init_strat = InitFromParams(vi.values)
-            accs = OnlyAccsVarInfo(RawValueAccumulator(false))
-            _, accs = init!!(model, accs, init_strat, UnlinkAll())
-            return get_raw_values(accs)
+        function get_raw_values_from_init_strat(model, init_strat)
+            accs = DynamicPPL.OnlyAccsVarInfo(DynamicPPL.RawValueAccumulator(false))
+            _, accs = DynamicPPL.init!!(model, accs, init_strat, DynamicPPL.UnlinkAll())
+            return DynamicPPL.get_raw_values(accs)
         end
 
         @testset "unlinked VarInfo" begin
-            mx = marginalize(model, [@varname(x)]; varinfo=vi_unlinked)
+            mx = marginalize(model, [@varname(x)]; transform_strategy=UnlinkAll())
             mx([0.5]) # evaluate at some point to force calculation of Laplace approx
-            vi = VarInfo(mx)
-            vnt = get_raw_values_from_tvals(vi)
+            init_strat = InitFromVector(mx)
+            vnt = get_raw_values_from_init_strat(model, init_strat)
             @test vnt[@varname(x)] ≈ mode(Normal())
 
-            vi = VarInfo(mx, [0.5]) # this 0.5 is unlinked
-            vnt = get_raw_values_from_tvals(vi)
+            init_strat = InitFromVector(mx, [0.5]) # this 0.5 is unlinked
+            vnt = get_raw_values_from_init_strat(model, init_strat)
             @test vnt[@varname(x)] ≈ mode(Normal())
             @test vnt[@varname(y)] ≈ 0.5
         end
 
         @testset "linked VarInfo" begin
-            mx = marginalize(model, [@varname(x)]; varinfo=vi_linked)
+            mx = marginalize(model, [@varname(x)]; transform_strategy=LinkAll())
             mx([0.5]) # evaluate at some point to force calculation of Laplace approx
-            vi = VarInfo(mx)
-            vnt = get_raw_values_from_tvals(vi)
+            init_strat = InitFromVector(mx)
+            vnt = get_raw_values_from_init_strat(model, init_strat)
             @test vnt[@varname(x)] ≈ mode(Normal())
 
-            vi = VarInfo(mx, [0.5]) # this 0.5 is linked
-            vnt = get_raw_values_from_tvals(vi)
+            init_strat = InitFromVector(mx, [0.5]) # this 0.5 is linked
+            vnt = get_raw_values_from_init_strat(model, init_strat)
             binv = Bijectors.VectorBijectors.from_linked_vec(Beta(2, 2))
             @test vnt[@varname(x)] ≈ mode(Normal())
             # when using getindex it always returns unlinked values
